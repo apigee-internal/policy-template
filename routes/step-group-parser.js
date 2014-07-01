@@ -2,10 +2,9 @@ var libxmljs = require("libxmljs");
 var events = require('events');
 var fs = require('fs');
 var util = require('util');
+require('./policy-constants');
 
 var EventEmitter = events.EventEmitter;
-var stepGroupSectionStart = '<!-- generated section for stepgroup ##stepGroupName## begins. PLEASE DO NOT REMOVE THIS -->';
-var stepGroupSectionEnd = '<!-- generated section for stepgroup ##stepGroupName## ends. PLEASE DO NOT REMOVE THIS -->';
 
 var newLine = '\n';
 
@@ -14,7 +13,8 @@ var newLine = '\n';
  *
  * @constructor
  */
-function StepGroupsParser() {
+function StepGroupsParser(policyConstants) {
+    this.policyConstants = policyConstants;
     EventEmitter.call(this);
     return( this );
 }
@@ -31,26 +31,30 @@ StepGroupsParser.prototype.process = function (dir) {
             groupFilesArr.push(data);
         });
         for (var i=0; i< groupFilesArr.length; i++) {
-            groupFileMap = Object.merge(groupFileMap, generatePair(groupFilesArr[i]));
+            groupFileMap = Object.merge(groupFileMap, generatePair(groupFilesArr[i], self.policyConstants));
         }
         self.emit('finish', groupFileMap);
     });
 }
 
-function generatePair(groupFile) {
+module.exports = StepGroupsParser;
+
+// utility functions
+
+function generatePair(groupFile, policyConstants) {
     var xmlDoc = libxmljs.parseXml(groupFile);
-    var stepGroupNodes = xmlDoc.get('//StepGroups').childNodes();
+    var stepGroupNodes = xmlDoc.get('//'+ policyConstants.stepGroupsStr).childNodes();
     var stepGroupArr = [];
     for (var i=0; i< stepGroupNodes.length; i++) {
-        if (stepGroupNodes[i].name() && stepGroupNodes[i].name()==='StepGroup') {
+        if (stepGroupNodes[i].name() && stepGroupNodes[i].name()=== policyConstants.stepGroupStr) {
             var stepGroupName = stepGroupNodes[i].attr('name').value();
-            stepGroupArr[stepGroupName]=getInnerXML(stepGroupNodes[i], stepGroupName);
+            stepGroupArr[stepGroupName]=getInnerXML(stepGroupNodes[i], stepGroupName, policyConstants);
         }
     }
     return stepGroupArr;
 }
 
-function getInnerXML(node, stepGroupName) {
+function getInnerXML(node, stepGroupName, policyConstants) {
     var childNodes = node.childNodes();
     var innerXML = '';
     var childNodesLen = childNodes.length;
@@ -58,18 +62,16 @@ function getInnerXML(node, stepGroupName) {
         innerXML = innerXML+childNodes[i].toString();
     }
 
-    return generatePadding(stepGroupName, true) + newLine + innerXML + newLine + generatePadding(stepGroupName, false);
+    return generatePadding(policyConstants, stepGroupName, true) + newLine + innerXML + newLine + generatePadding(policyConstants, stepGroupName, false);
 }
 
-function generatePadding(stepGroupName, isStart) {
+function generatePadding(policyConstants, stepGroupName, isStart) {
     if (isStart) {
-        return stepGroupSectionStart.replace('##stepGroupName##', '##'+stepGroupName+'##');
+        return policyConstants.getStepGroupSectionStart().replace('##stepGroupName##', '##'+stepGroupName+'##');
     } else {
-        return stepGroupSectionEnd.replace('##stepGroupName##', '##' + stepGroupName + '##');
+        return policyConstants.getStepGroupSectionEnd().replace('##stepGroupName##', '##' + stepGroupName + '##');
     }
 }
-
-module.exports = StepGroupsParser;
 
 Object.merge = function (destination, source) {
     for (var property in source) {
@@ -79,15 +81,3 @@ Object.merge = function (destination, source) {
     }
     return destination;
 };
-
-
-//Testing Code
-//var stepParser = new StepGroupsParser();
-//stepParser.processUpload('/Users/vinoth/Downloads/MessagingAPI/apiproxy/stepgroups');
-//stepParser.on('finish', function (testArr) {
-//    for (var j in testArr) {
-//        if (testArr.hasOwnProperty(j)) {
-//            console.dir(j + ' : ' + testArr[j]);
-//        }
-//    }
-//});

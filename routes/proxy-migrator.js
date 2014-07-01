@@ -4,17 +4,17 @@ var fs = require('fs');
 var util = require('util');
 var Zip = require('adm-zip');
 var PolicyTemplateUtil = require('./policy-template-utils');
+require('./policy-constants');
 
 var EventEmitter = events.EventEmitter;
-
-var stepGroupElementRegex = /<StepGroup name="(\w+)"\/>/g;
 
 /**
  * ProxyMigrator Class.
  *
  * @constructor
  */
-function ProxyMigrator() {
+function ProxyMigrator(policyConstants) {
+    this.policyConstants = policyConstants;
     EventEmitter.call(this);
     return( this );
 }
@@ -26,7 +26,7 @@ ProxyMigrator.prototype.processUpload = function (proxyDir, groupsMap) {
     fs.readdir(proxyDir + '/', function (err, proxyFiles) {
         proxyFiles.forEach(function (proxyFile) {
             var data = fs.readFileSync(proxyDir+'/'+ proxyFile, 'utf8');
-            var replacedData = replaceStepGroups(groupsMap, data);
+            var replacedData = replaceStepGroups(groupsMap, data, self.policyConstants);
             fs.writeFileSync(proxyDir + '/' + proxyFile, replacedData);
         });
         // now zip files
@@ -65,7 +65,7 @@ ProxyMigrator.prototype.processDownload = function (proxyDir) {
                 if (currCommentStr.indexOf('<!-- generated section for stepgroup')>-1 && currCommentStr.indexOf('begins')>-1) {
                     // get the content and remove nodes till end padding
                     var stepGroupName = extractStepGroupNameFromComment(currCommentNode.toString());
-                    var stepGroupPair = removeSnippetAndGetStepGroupPair(xmlDoc, currCommentNode, stepGroupName);
+                    var stepGroupPair = removeSnippetAndGetStepGroupPair(xmlDoc, currCommentNode, stepGroupName, self.policyConstants);
                     if (!stepGroupArr[stepGroupName]) {
                         stepGroupArr = Object.merge(stepGroupArr, stepGroupPair);
                     }
@@ -79,7 +79,7 @@ ProxyMigrator.prototype.processDownload = function (proxyDir) {
             }
             for (var stepGroupName in stepGroupArr) {
                 if (stepGroupArr.hasOwnProperty(stepGroupName)) {
-                    var stepGroupData = addStepGroupPadding(stepGroupName, stepGroupArr[stepGroupName]);
+                    var stepGroupData = addStepGroupPadding(stepGroupName, stepGroupArr[stepGroupName], self.policyConstants);
                     fs.writeFileSync(apiProxyDir+'/stepgroups/'+stepGroupName+'.xml',stepGroupData);
                 }
             }
@@ -92,7 +92,9 @@ ProxyMigrator.prototype.processDownload = function (proxyDir) {
     });
 }
 
-function removeSnippetAndGetStepGroupPair(xmlDoc, commentNode, stepGroupName) {
+// utility functions
+
+function removeSnippetAndGetStepGroupPair(xmlDoc, commentNode, stepGroupName, policyConstants) {
     var nextSibling = commentNode.nextSibling();
 
     var stepGroupData = '';
@@ -108,7 +110,7 @@ function removeSnippetAndGetStepGroupPair(xmlDoc, commentNode, stepGroupName) {
             prevSibling.remove();
         }
     }
-    var stepGroupElement = new libxmljs.Element(xmlDoc, 'StepGroup');
+    var stepGroupElement = new libxmljs.Element(xmlDoc, policyConstants.stepGroupStr);
     stepGroupElement.attr({'name':stepGroupName});
     commentNode.addNextSibling(stepGroupElement);
     commentNode.remove();
@@ -117,15 +119,15 @@ function removeSnippetAndGetStepGroupPair(xmlDoc, commentNode, stepGroupName) {
     return stepGroupArr;
 }
 
-function addStepGroupPadding(stepGroupName, stepGroupData) {
-    var topPadding = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<StepGroups>\n<StepGroup name="'+stepGroupName+'">\n';
-    var bottomPadding = '\n</StepGroup>\n</StepGroups>';
+function addStepGroupPadding(stepGroupName, stepGroupData, policyConstants) {
+    var topPadding = policyConstants.getTopPadding(stepGroupName);
+    var bottomPadding = policyConstants.getBottomPadding();
     return topPadding+stepGroupData+bottomPadding;
 }
 
-function replaceStepGroups(hash, obj) {
+function replaceStepGroups(hash, obj, policyConstants) {
     var k = obj,
-        re = stepGroupElementRegex, // reconsider spaces (handle space with regex)
+        re = policyConstants.stepGroupElementRegex, // reconsider spaces (handle space with regex)
         parts = k.match(re) || [],
         t, p = undefined;
 
@@ -162,5 +164,3 @@ Object.merge = function (destination, source) {
 };
 
 module.exports = ProxyMigrator;
-
-//(new ProxyMigrator()).processUpload('/Users/vinoth/Downloads/MessagingAPI/apiproxy/proxies');

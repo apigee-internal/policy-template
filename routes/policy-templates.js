@@ -3,16 +3,16 @@ var router = express.Router();
 var multiparty = require('multiparty');
 var Unzip = require('adm-zip');
 var fs = require('fs');
+var os = require('os');
 var EventEmitter = require('events').EventEmitter;
 var StepGroupParser = require('./step-group-parser');
 var ProxyMigrator = require('./proxy-migrator');
 var PolicyTemplateUtil = require('./policy-template-utils');
-var os = require('os');
+var PolicyConstants = require('./policy-constants');
 
+var tempDirectory = os.tmpdir();
 
-var tempDirectory = os.tmpdir();;
-
-//TODO : Handle policies instead of steps
+var policyConstants;
 
 /* GET policytemplates listing. */
 router.get('/', function (req, res) {
@@ -21,6 +21,11 @@ router.get('/', function (req, res) {
 
 router.post('/upload', function (req, res) {
     var form = new multiparty.Form();
+    if (req.param('islegacy')=='true') {
+        policyConstants = new PolicyConstants(true);
+    } else {
+        policyConstants = new PolicyConstants(false);
+    }
     form.parse(req, function(err, fields, files){
         handleUpload(res, err, fields, files);
     });
@@ -28,6 +33,11 @@ router.post('/upload', function (req, res) {
 
 router.post('/download', function (req, res) {
     var form = new multiparty.Form();
+    if (req.param('islegacy') == 'true') {
+        policyConstants = new PolicyConstants(true);
+    } else {
+        policyConstants = new PolicyConstants(false);
+    }
     form.parse(req, function (err, fields, files) {
         handleDownload(res, err, fields, files);
     });
@@ -84,10 +94,10 @@ function proceedWithMigration(sourceDirectory, res) {
             // load contents of step groups in memory
             var stepGroupsDir = sourceDirectory + '/' + file + '/apiproxy/stepgroups';
             // Go into apiproxy directory
-            var stepGroupParser = new StepGroupParser();
+            var stepGroupParser = new StepGroupParser(policyConstants);
             stepGroupParser.on('finish',function(groupMap) {
                 var proxyDir = sourceDirectory + '/' + file + '/apiproxy/proxies';
-                var proxyMigrator = new ProxyMigrator();
+                var proxyMigrator = new ProxyMigrator(policyConstants);
                 proxyMigrator.on('finish', function (bundlePath, tempDir, proxyName) {
                     // delete bundlePath after 10 Sec. (Find a better way).
                     setTimeout(function() { new PolicyTemplateUtil().deleteFolderRecursive(tempDir) }, 10000);
@@ -131,9 +141,9 @@ function proceedWithDownload(sourceDirectory, res) {
         if (err) throw err;
         files.forEach(function (file) {
 
-            var stepGroupsDir = sourceDirectory + '/' + file + '/apiproxy/stepgroups';
+            // var stepGroupsDir = sourceDirectory + '/' + file + '/apiproxy/stepgroups';
             var proxyDir = sourceDirectory + '/' + file + '/apiproxy/proxies';
-            var proxyMigrator = new ProxyMigrator();
+            var proxyMigrator = new ProxyMigrator(policyConstants);
             proxyMigrator.on('finish', function (bundlePath, tempDir, proxyName) {
                 // delete bundlePath after 10 Sec. (Find a better way).
                 setTimeout(function () {
